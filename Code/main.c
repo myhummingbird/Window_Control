@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <stdbool.h>
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
@@ -126,6 +128,8 @@ int main(void)
 	uint8_t adc      [WINDOW_NO] = {0x80, 0x80, 0x80, 0x80, 0x80};
 	
 	uint8_t input_n  [WINDOW_NO] = {0xff, 0xff, 0xff, 0xff, 0xff};
+	uint8_t input_n_1[WINDOW_NO] = {0xff, 0xff, 0xff, 0xff, 0xff};
+	bool    input_dif[WINDOW_NO] = {false,false,false,false,false};
 	
 	uint8_t output   [WINDOW_NO] = {0,0,0,0,0};
 	
@@ -149,48 +153,63 @@ int main(void)
 			in  = (input_t* )(input_n + index);
 			out = (output_t*)(output  + index);
 			
-			// check config switch
-			if (in->config == CONF_NONE) // all off
+			if (in->config == CONF_2CH) // all on
 			{
-				// disable this window channel
-				out->byte = 0;
+				current_limit = CURRENT_2CH;
+			}
+			else // CONF_LCH or CONF_RCH
+			{
+				current_limit = CURRENT_1CH;
+			}
+			
+			// stop when current reach to limit
+			if (adc[index] >= current_limit)
+			{
+				out->dir = DIR_RESET;
+				out->run = RUN_INACTIVE;
+			}
+			
+			// debounce algorithm
+			if (input_n_1[index] != input_n[index])
+			{
+				// first for change event set_flag
+				// if has event again before debounce re-set_flag
+				input_dif[index] = true;
+				input_n_1[index] = input_n[index];
 			}
 			else
 			{
-				if (in->config == CONF_2CH) // all on
+				// if still current change, event has pass debounce
+				if (input_dif[index] == true)
 				{
-					current_limit = CURRENT_2CH;
-				}
-				else // CONF_LCH or CONF_RCH
-				{
-					current_limit = CURRENT_1CH;
-				}
-				
-				// stop when current reach to limit
-				if (adc[index] >= current_limit)
-				{
-					out->dir = DIR_RESET;
-					out->run = RUN_INACTIVE;
-				}
-				else
-				{
-					// check control
-					if (in->up_down == SW_UP)
+					input_dif[index] = false;
+					
+					// check config switch
+					if (in->config == CONF_NONE) // all off
 					{
-						out->dir = DIR_UP;
-						out->run = RUN_ACTIVE;
+						// disable this window channel
+						out->byte = 0;
 					}
-					else if (in->up_down == SW_DOWN)
+					else
 					{
-						out->dir = DIR_DOWN;
-						out->run = RUN_ACTIVE;
+						// check control
+						if (in->up_down == SW_UP)
+						{
+							out->dir = DIR_UP;
+							out->run = RUN_ACTIVE;
+						}
+						else if (in->up_down == SW_DOWN)
+						{
+							out->dir = DIR_DOWN;
+							out->run = RUN_ACTIVE;
+						}
+						else if (in->up_down == SW_STOP)
+						{
+							out->dir = DIR_RESET;
+							out->run = RUN_INACTIVE;
+						}
+						else {}
 					}
-					else if (in->up_down == SW_STOP)
-					{
-						out->dir = DIR_RESET;
-						out->run = RUN_INACTIVE;
-					}
-					else {}
 				}
 			}
 		}
