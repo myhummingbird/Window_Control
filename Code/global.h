@@ -34,5 +34,21 @@
 // User Application define
 #define WINDOW_NO	5
 
+#define GLOBAL_ALARM_DDR	DDRB
+#define GLOBAL_ALARM_PORT	PORTB
+#define GLOBAL_ALARM_BIT	PIN1
+
+#define GLOBAL_ALARM_ACTIVE()	GLOBAL_ALARM_PORT |=  (1 << GLOBAL_ALARM_BIT)
+#define GLOBAL_ALARM_INACTIVE()	GLOBAL_ALARM_PORT &= ~(1 << GLOBAL_ALARM_BIT)
+
+#define GLOBAL_BAS_DDR		DDRB
+#define GLOBAL_BAS_PORT		PORTB
+#define GLOBAL_BAS_PIN		PINB
+#define GLOBAL_BAS_BIT		PIN0
+
+#define GLOBAL_BAS_READ()	((GLOBAL_BAS_PIN >> GLOBAL_BAS_BIT) & 1)
+
+// User - Window Input
+// User - Window Output
 
 #endif // __GLOBAL_H__
