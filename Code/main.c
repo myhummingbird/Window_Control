@@ -3,6 +3,7 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/wdt.h>
 
 #include <util/delay.h>
 
@@ -123,6 +124,35 @@ typedef union {
 #define CURRENT_1CH		0x60	// 96
 #define CURRENT_2CH		0xC0	// 192
 
+uint32_t ms_tick = 0;
+uint32_t  s_tick = 0;
+bool tick_flag = false;
+
+// ms_tick
+ISR(TIMER1_OVF_vect)
+{
+	TCNT1 = 49536; // preload timer count for 16000 (1ms)
+	
+	ms_tick++;
+	if (ms_tick == 1000)
+	{
+		ms_tick = 0;
+		s_tick++;
+	}
+	
+	if ((ms_tick % 100) == 0)
+		tick_flag = true;
+}
+
+void timer_init(void)
+{
+	TCCR1A = 0; // initialize timer1
+	TCCR1B = 0; //mode 0
+	TCCR1B |= (1 << CS10); // no prescaler
+	TCNT1 = 49536; // preload timer count for 16000 (1ms)
+	TIMSK |= (1 << TOIE1); // enable timer overflow interrupt
+}
+
 int main(void)
 {
 	uint8_t adc      [WINDOW_NO] = {0x80, 0x80, 0x80, 0x80, 0x80};
@@ -139,85 +169,97 @@ int main(void)
 	
 	uint8_t index;
 	
+	//wdt_reset();
+    //wdt_disable();
+	
 	init();
 	
 	// all off when init
 	hc595_write (output, WINDOW_NO);
 	
+	timer_init();
+	sei();
+	
 	while (1)
 	{
-		get_window(WINDOW_NO, adc, input_n);
-		
-		for (index = 0; index < WINDOW_NO; index++)
+		// loop 10 Hz
+		if (tick_flag == true)
 		{
-			in  = (input_t* )(input_n + index);
-			out = (output_t*)(output  + index);
+			tick_flag = false;
 			
-			if (in->config == CONF_2CH) // all on
-			{
-				current_limit = CURRENT_2CH;
-			}
-			else // CONF_LCH or CONF_RCH
-			{
-				current_limit = CURRENT_1CH;
-			}
+			get_window(WINDOW_NO, adc, input_n);
 			
-			// stop when current reach to limit
-			if (adc[index] >= current_limit)
+			for (index = 0; index < WINDOW_NO; index++)
 			{
-				out->dir = DIR_RESET;
-				out->run = RUN_INACTIVE;
-			}
-			
-			// debounce algorithm
-			if (input_n_1[index] != input_n[index])
-			{
-				// first for change event set_flag
-				// if has event again before debounce re-set_flag
-				input_dif[index] = true;
-				input_n_1[index] = input_n[index];
-			}
-			else
-			{
-				// if still current change, event has pass debounce
-				if (input_dif[index] == true)
+				in  = (input_t* )(input_n + index);
+				out = (output_t*)(output  + index);
+				
+				if (in->config == CONF_2CH) // all on
 				{
-					input_dif[index] = false;
-					
-					// check config switch
-					if (in->config == CONF_NONE) // all off
+					current_limit = CURRENT_2CH;
+				}
+				else // CONF_LCH or CONF_RCH
+				{
+					current_limit = CURRENT_1CH;
+				}
+				
+				// stop when current reach to limit
+				if (adc[index] >= current_limit)
+				{
+					out->dir = DIR_RESET;
+					out->run = RUN_INACTIVE;
+				}
+				
+				// debounce algorithm
+				if (input_n_1[index] != input_n[index])
+				{
+					// first for change event set_flag
+					// if has event again before debounce re-set_flag
+					input_dif[index] = true;
+					input_n_1[index] = input_n[index];
+				}
+				else
+				{
+					// if still current change, event has pass debounce
+					if (input_dif[index] == true)
 					{
-						// disable this window channel
-						out->byte = 0;
-					}
-					else
-					{
-						// check control
-						if (in->up_down == SW_UP)
+						input_dif[index] = false;
+						
+						// check config switch
+						if (in->config == CONF_NONE) // all off
 						{
-							out->dir = DIR_UP;
-							out->run = RUN_ACTIVE;
+							// disable this window channel
+							out->byte = 0;
 						}
-						else if (in->up_down == SW_DOWN)
+						else
 						{
-							out->dir = DIR_DOWN;
-							out->run = RUN_ACTIVE;
+							// check control
+							if (in->up_down == SW_UP)
+							{
+								out->dir = DIR_UP;
+								out->run = RUN_ACTIVE;
+							}
+							else if (in->up_down == SW_DOWN)
+							{
+								out->dir = DIR_DOWN;
+								out->run = RUN_ACTIVE;
+							}
+							else if (in->up_down == SW_STOP)
+							{
+								out->dir = DIR_RESET;
+								out->run = RUN_INACTIVE;
+							}
+							else {}
 						}
-						else if (in->up_down == SW_STOP)
-						{
-							out->dir = DIR_RESET;
-							out->run = RUN_INACTIVE;
-						}
-						else {}
 					}
 				}
 			}
+			
+			hc595_write (output, WINDOW_NO);
+			printf ("\r%lu", ms_tick);
 		}
 		
-		hc595_write (output, WINDOW_NO);
-		
-		printf ("\r0x%02x 0x%02x 0x%02x 0x%02x 0x%02x", adc[0], adc[1], adc[2], adc[3], adc[4]);
-		_delay_ms(100);
+		//printf ("\r0x%02x 0x%02x 0x%02x 0x%02x 0x%02x", adc[0], adc[1], adc[2], adc[3], adc[4]);
 	}
 
 	return 0;
