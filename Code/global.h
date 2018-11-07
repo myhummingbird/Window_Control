@@ -20,7 +20,8 @@
 
 // define for HC165 interface
 #define HC165_SEROUT_DDR	DDRD
-#define HC165_SEROUT_PORT	PIND
+#define HC165_SEROUT_PORT	PORTD
+#define HC165_SEROUT_PIN	PIND
 #define HC165_SEROUT_BIT	PIN7
 
 #define HC165_CLK_DDR		DDRD

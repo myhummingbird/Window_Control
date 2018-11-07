@@ -41,7 +41,7 @@
 
 
 # MCU name
-MCU = atmega8
+MCU = atmega88p
 
 
 # Processor frequency.
@@ -62,7 +62,7 @@ MCU = atmega8
 #         F_CPU = 16000000
 #         F_CPU = 18432000
 #         F_CPU = 20000000
-F_CPU = 16000000
+F_CPU = 8000000
 
 
 # Output format. (can be srec, ihex, binary)

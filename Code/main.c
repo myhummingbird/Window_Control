@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -14,27 +15,27 @@
 #include <util/setbaud.h>
 
 void uart_init(void) {
-    UBRRH = UBRRH_VALUE;
-    UBRRL = UBRRL_VALUE;
+    UBRR0H = UBRRH_VALUE;
+    UBRR0L = UBRRL_VALUE;
 
 #if USE_2X
-    UCSRA |= _BV(U2X);
+    UCSR0A |= _BV(U2X0);
 #else
-    UCSRA &= ~(_BV(U2X));
+    UCSR0A &= ~(_BV(U2X0));
 #endif
 
-    UCSRC = _BV(UCSZ1) | _BV(UCSZ0); /* 8-bit data */
-    UCSRB = _BV(RXEN) | _BV(TXEN);   /* Enable RX and TX */
+    UCSR0C = _BV(UCSZ01) | _BV(UCSZ00); /* 8-bit data */
+    UCSR0B = _BV(RXEN0)  | _BV(TXEN0);   /* Enable RX and TX */
 }
 
 void uart_putchar(char c, FILE *stream) {
-    loop_until_bit_is_set(UCSRA, UDRE); /* Wait until data register empty. */
-    UDR = c;
+    loop_until_bit_is_set(UCSR0A, UDRE0); /* Wait until data register empty. */
+    UDR0 = c;
 }
 
 char uart_getchar(FILE *stream) {
-    loop_until_bit_is_set(UCSRA, RXC); /* Wait until data exists. */
-    return UDR;
+    loop_until_bit_is_set(UCSR0A, RXC0); /* Wait until data exists. */
+    return UDR0;
 }
 
 FILE uart_output = FDEV_SETUP_STREAM((void*)uart_putchar, NULL, _FDEV_SETUP_WRITE);
@@ -54,7 +55,7 @@ void init(void)
     stdout = &uart_output;
     stdin  = &uart_input;
 	
-	adc_init();
+	//adc_init();
 	hc165_init();
 	hc595_init();
 	
@@ -65,16 +66,14 @@ void init(void)
 	// init global bas as input
 	GLOBAL_BAS_PORT |=  (1 << GLOBAL_BAS_BIT);	// pull-up
 	GLOBAL_BAS_DDR  &= ~(1 << GLOBAL_BAS_BIT);
-	
-	
 }
 
 void get_window(uint8_t n, uint8_t *an, uint8_t *in)
 {
 	uint8_t i;
 	
-	for (i = 0; i < n; i++)
-		an[i] = adc_start_conversion(i);
+//	for (i = 0; i < n; i++)
+//		an[i] = adc_start_conversion(i);
 		
 	hc165_read (in , n);
 }
@@ -128,10 +127,12 @@ uint32_t ms_tick = 0;
 uint32_t  s_tick = 0;
 bool tick_flag = false;
 
+uint16_t preload_timer;
+
 // ms_tick
 ISR(TIMER1_OVF_vect)
 {
-	TCNT1 = 49536; // preload timer count for 16000 (1ms)
+	TCNT1 = preload_timer;
 	
 	ms_tick++;
 	if (ms_tick == 1000)
@@ -149,8 +150,8 @@ void timer_init(void)
 	TCCR1A = 0; // initialize timer1
 	TCCR1B = 0; //mode 0
 	TCCR1B |= (1 << CS10); // no prescaler
-	TCNT1 = 49536; // preload timer count for 16000 (1ms)
-	TIMSK |= (1 << TOIE1); // enable timer overflow interrupt
+	TCNT1 = preload_timer;
+	TIMSK1 |= (1 << TOIE1); // enable timer overflow interrupt
 }
 
 int main(void)
@@ -161,13 +162,15 @@ int main(void)
 	uint8_t input_n_1[WINDOW_NO] = {0xff, 0xff, 0xff, 0xff, 0xff};
 	bool    input_dif[WINDOW_NO] = {false,false,false,false,false};
 	
-	uint8_t output   [WINDOW_NO] = {0,0,0,0,0};
+	uint8_t output   [WINDOW_NO] = {0x00, 0x00, 0x00, 0x00, 0x00};
 	
 	input_t  *in;
 	output_t *out;
 	uint8_t current_limit;
 	
 	uint8_t index;
+	
+	preload_timer = 65535 - (F_CPU / 1000) + 1; // preload timer count for 1ms
 	
 	//wdt_reset();
     //wdt_disable();
@@ -188,12 +191,13 @@ int main(void)
 			tick_flag = false;
 			
 			get_window(WINDOW_NO, adc, input_n);
+			memset (output, 0, WINDOW_NO);
 			
 			for (index = 0; index < WINDOW_NO; index++)
 			{
 				in  = (input_t* )(input_n + index);
 				out = (output_t*)(output  + index);
-				
+/*				
 				if (in->config == CONF_2CH) // all on
 				{
 					current_limit = CURRENT_2CH;
@@ -209,9 +213,9 @@ int main(void)
 					out->dir = DIR_RESET;
 					out->run = RUN_INACTIVE;
 				}
-				
+*/				
 				// debounce algorithm
-				if (input_n_1[index] != input_n[index])
+/*				if (input_n_1[index] != input_n[index])
 				{
 					// first for change event set_flag
 					// if has event again before debounce re-set_flag
@@ -252,11 +256,28 @@ int main(void)
 							else {}
 						}
 					}
+				}*/
+				
+				if (in->up_down == SW_UP)
+				{
+					out->dir = DIR_UP;
+					out->run = RUN_ACTIVE;
+				}
+				else if (in->up_down == SW_DOWN)
+				{
+					out->dir = DIR_DOWN;
+					out->run = RUN_ACTIVE;
+				}
+				else if (in->up_down == SW_STOP)
+				{
+					out->dir = DIR_RESET;
+					out->run = RUN_INACTIVE;
 				}
 			}
 			
 			hc595_write (output, WINDOW_NO);
-			printf ("\r%lu", ms_tick);
+			//printf ("\r%lu", ms_tick);
+			printf ("\r0x%02x 0x%02x 0x%02x 0x%02x 0x%02x", input_n[0], input_n[1], input_n[2], input_n[3], input_n[4]);
 		}
 		
 		//printf ("\r0x%02x 0x%02x 0x%02x 0x%02x 0x%02x", adc[0], adc[1], adc[2], adc[3], adc[4]);

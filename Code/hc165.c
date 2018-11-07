@@ -13,6 +13,7 @@
 
 void hc165_init(void)
 {
+	HC165_SEROUT_PORT	|=  (1 << HC165_SEROUT_BIT);
 	HC165_SEROUT_DDR	&= ~(1 << HC165_SEROUT_BIT);
 	HC165_CLK_DDR		|=  (1 << HC165_CLK_BIT	);
 	HC165_LATCH_DDR		|=  (1 << HC165_LATCH_BIT);
@@ -37,7 +38,7 @@ void hc165_read(uint8_t *byte, uint8_t size)
 		for (b = 7; b >= 0; b--)
 		{
 			byte[s] <<= 1;
-			byte[s] |= ((HC165_SEROUT_PORT >> HC165_SEROUT_BIT) & 1);
+			byte[s] |= ((HC165_SEROUT_PIN >> HC165_SEROUT_BIT) & 1);
 			
 			HC165_CLK_HIGH();
 			// delay
