@@ -10,7 +10,7 @@
 
 #include <stdint.h>
 
-#define BAUD 9600
+#define BAUD 38400
 
 #include <util/setbaud.h>
 
@@ -55,7 +55,7 @@ void init(void)
     stdout = &uart_output;
     stdin  = &uart_input;
 	
-	//adc_init();
+	adc_init();
 	hc165_init();
 	hc595_init();
 	
@@ -72,8 +72,8 @@ void get_window(uint8_t n, uint8_t *an, uint8_t *in)
 {
 	uint8_t i;
 	
-//	for (i = 0; i < n; i++)
-//		an[i] = adc_start_conversion(i);
+	for (i = 0; i < n; i++)
+		an[i] = adc_start_conversion(i);
 		
 	hc165_read (in , n);
 }
@@ -141,7 +141,7 @@ ISR(TIMER1_OVF_vect)
 		s_tick++;
 	}
 	
-	if ((ms_tick % 100) == 0)
+	if ((ms_tick % 50) == 0)
 		tick_flag = true;
 }
 
@@ -153,6 +153,8 @@ void timer_init(void)
 	TCNT1 = preload_timer;
 	TIMSK1 |= (1 << TOIE1); // enable timer overflow interrupt
 }
+
+#define clrscr() printf ("%c[2J", 27)
 
 int main(void)
 {
@@ -169,6 +171,7 @@ int main(void)
 	uint8_t current_limit;
 	
 	uint8_t index;
+	uint8_t count_display = 0;
 	
 	preload_timer = 65535 - (F_CPU / 1000) + 1; // preload timer count for 1ms
 	
@@ -180,18 +183,20 @@ int main(void)
 	// all off when init
 	hc595_write (output, WINDOW_NO);
 	
+	// clear terminal screen
+	clrscr();
+	
 	timer_init();
 	sei();
 	
 	while (1)
 	{
-		// loop 10 Hz
+		// loop 20 Hz
 		if (tick_flag == true)
 		{
 			tick_flag = false;
 			
 			get_window(WINDOW_NO, adc, input_n);
-			memset (output, 0, WINDOW_NO);
 			
 			for (index = 0; index < WINDOW_NO; index++)
 			{
@@ -215,7 +220,7 @@ int main(void)
 				}
 */				
 				// debounce algorithm
-/*				if (input_n_1[index] != input_n[index])
+				if (input_n_1[index] != input_n[index])
 				{
 					// first for change event set_flag
 					// if has event again before debounce re-set_flag
@@ -256,31 +261,23 @@ int main(void)
 							else {}
 						}
 					}
-				}*/
-				
-				if (in->up_down == SW_UP)
-				{
-					out->dir = DIR_UP;
-					out->run = RUN_ACTIVE;
-				}
-				else if (in->up_down == SW_DOWN)
-				{
-					out->dir = DIR_DOWN;
-					out->run = RUN_ACTIVE;
-				}
-				else if (in->up_down == SW_STOP)
-				{
-					out->dir = DIR_RESET;
-					out->run = RUN_INACTIVE;
 				}
 			}
 			
 			hc595_write (output, WINDOW_NO);
-			//printf ("\r%lu", ms_tick);
-			printf ("\r0x%02x 0x%02x 0x%02x 0x%02x 0x%02x", input_n[0], input_n[1], input_n[2], input_n[3], input_n[4]);
+			
+			count_display++;
+			if (count_display == 3)
+			{
+				count_display = 0;
+				
+				clrscr();
+				printf ("%4d\r\n", ms_tick);
+				printf ("0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", adc[0]    , adc[1]    , adc[2]    , adc[3]    , adc[4]    );
+				printf ("0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", input_n[0], input_n[1], input_n[2], input_n[3], input_n[4]);
+				printf ("0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", output[0] , output[1] , output[2] , output[3] , output[4] );
+			}
 		}
-		
-		//printf ("\r0x%02x 0x%02x 0x%02x 0x%02x 0x%02x", adc[0], adc[1], adc[2], adc[3], adc[4]);
 	}
 
 	return 0;

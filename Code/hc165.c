@@ -29,21 +29,21 @@ void hc165_read(uint8_t *byte, uint8_t size)
 
 	HC165_LATCH_LOW();
 	// delay
-	HC165_LATCH_HIGH();
-
+	
 	memset(byte, 0, size);
+
+	HC165_LATCH_HIGH();
 
 	for (s = 0; s < size; s++)
 	{
 		for (b = 7; b >= 0; b--)
 		{
+			HC165_CLK_LOW();
+
 			byte[s] <<= 1;
 			byte[s] |= ((HC165_SEROUT_PIN >> HC165_SEROUT_BIT) & 1);
 			
 			HC165_CLK_HIGH();
-			// delay
-			HC165_CLK_LOW();
-			
 		}
 
 	}
