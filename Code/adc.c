@@ -7,23 +7,15 @@ void adc_init(void)
 	// AVCC with external capacitor at AREF pin, Left adjust result
 	ADMUX |= (0 << REFS1) | (1 << REFS0) | (1 << ADLAR);
 	
-	// set prescaller and enable ADC
-	ADCSRA |= (1 << ADEN) | (1 << ADPS2) | (0 << ADPS1) | (1 << ADPS0);
+	// set prescaller , enable ADC and ADC Interrupt enable
+	ADCSRA |= (1 << ADEN) | (1 << ADIE) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
 }
 
-uint8_t adc_start_conversion(uint8_t channel)
+void adc_start(uint8_t channel)
 {
 	// select ADC channel
 	ADMUX = (ADMUX & 0xF0) | channel;
 	
 	//Start conversion
 	ADCSRA |= (1 << ADSC);
-	
-	// wait until conversion complete ADSC=0 -> Complete
-    while (ADCSRA & (1 << ADSC));
-	
-	// Get ADC the Result
-	return ADCH;
-	// ADCL
-	// ADCW
 }

@@ -68,16 +68,6 @@ void init(void)
 	GLOBAL_BAS_DDR  &= ~(1 << GLOBAL_BAS_BIT);
 }
 
-void get_window(uint8_t n, uint8_t *an, uint8_t *in)
-{
-	uint8_t i;
-	
-	for (i = 0; i < n; i++)
-		an[i] = adc_start_conversion(i);
-		
-	hc165_read (in , n);
-}
-
 typedef union {
 	uint8_t byte;
 	struct {
@@ -154,12 +144,22 @@ void timer_init(void)
 	TIMSK1 |= (1 << TOIE1); // enable timer overflow interrupt
 }
 
+uint8_t ADC_NO = 0;
+uint8_t adc      [WINDOW_NO] = {0x00, 0x00, 0x00, 0x00, 0x00};
+
+#define CMA_N	3
+ISR(ADC_vect)
+{
+	adc[ ADC_NO ] = (uint8_t)(((float)(adc[ ADC_NO ] * CMA_N) + ADCH) / (CMA_N + 1));			// Output ADCH
+	
+	ADC_NO = (ADC_NO + 1) % WINDOW_NO;
+	adc_start( ADC_NO );
+}
+
 #define clrscr() printf ("%c[2J", 27)
 
 int main(void)
 {
-	uint8_t adc      [WINDOW_NO] = {0x80, 0x80, 0x80, 0x80, 0x80};
-	
 	uint8_t input_n  [WINDOW_NO] = {0xff, 0xff, 0xff, 0xff, 0xff};
 	uint8_t input_n_1[WINDOW_NO] = {0xff, 0xff, 0xff, 0xff, 0xff};
 	bool    input_dif[WINDOW_NO] = {false,false,false,false,false};
@@ -188,6 +188,7 @@ int main(void)
 	
 	timer_init();
 	sei();
+	adc_start( ADC_NO );
 	
 	while (1)
 	{
@@ -196,7 +197,7 @@ int main(void)
 		{
 			tick_flag = false;
 			
-			get_window(WINDOW_NO, adc, input_n);
+			hc165_read (input_n ,WINDOW_NO);
 			
 			for (index = 0; index < WINDOW_NO; index++)
 			{
@@ -272,7 +273,7 @@ int main(void)
 				count_display = 0;
 				
 				clrscr();
-				printf ("%4d\r\n", ms_tick);
+				printf ("\r\n%4lu\r\n", ms_tick);
 				printf ("0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", adc[0]    , adc[1]    , adc[2]    , adc[3]    , adc[4]    );
 				printf ("0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", input_n[0], input_n[1], input_n[2], input_n[3], input_n[4]);
 				printf ("0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", output[0] , output[1] , output[2] , output[3] , output[4] );

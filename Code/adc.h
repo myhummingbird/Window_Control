@@ -4,6 +4,6 @@
 #include <stdint.h>
 
 void adc_init(void);
-uint8_t adc_start_conversion(uint8_t channel);
+void adc_start(uint8_t channel);
 
 #endif // __ADC_H__
