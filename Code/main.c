@@ -158,13 +158,20 @@ ISR(ADC_vect)
 
 #define clrscr() printf ("%c[2J", 27)
 
+#define RUN_ACTIVE_TIME_LIMIT 	1800
+
 int main(void)
 {
+	uint8_t global_bas_n   = 0;
+	uint8_t global_bas_n_1 = 1;
+	bool    global_bas_dif = false;
+	
 	uint8_t input_n  [WINDOW_NO] = {0xff, 0xff, 0xff, 0xff, 0xff};
 	uint8_t input_n_1[WINDOW_NO] = {0xff, 0xff, 0xff, 0xff, 0xff};
 	bool    input_dif[WINDOW_NO] = {false,false,false,false,false};
 	
 	uint8_t output   [WINDOW_NO] = {0x00, 0x00, 0x00, 0x00, 0x00};
+	uint16_t run_active_count [WINDOW_NO] = {0, 0, 0, 0, 0};
 	
 	input_t  *in;
 	output_t *out;
@@ -197,69 +204,122 @@ int main(void)
 		{
 			tick_flag = false;
 			
-			hc165_read (input_n ,WINDOW_NO);
-			
 			for (index = 0; index < WINDOW_NO; index++)
 			{
-				in  = (input_t* )(input_n + index);
 				out = (output_t*)(output  + index);
-/*				
-				if (in->config == CONF_2CH) // all on
-				{
-					current_limit = CURRENT_2CH;
-				}
-				else // CONF_LCH or CONF_RCH
-				{
-					current_limit = CURRENT_1CH;
-				}
 				
-				// stop when current reach to limit
-				if (adc[index] >= current_limit)
+				if (out->run == RUN_ACTIVE)
 				{
-					out->dir = DIR_RESET;
-					out->run = RUN_INACTIVE;
+					run_active_count[index]++;
+					
+					if (run_active_count[index] >= RUN_ACTIVE_TIME_LIMIT)
+					{
+						out->run = RUN_INACTIVE;
+						out->dir = DIR_RESET;
+					}
 				}
-*/				
-				// debounce algorithm
-				if (input_n_1[index] != input_n[index])
+			}
+			
+			global_bas_n = GLOBAL_BAS_READ();
+			if (global_bas_n_1 != global_bas_n)
+			{
+				global_bas_dif = true;
+				global_bas_n_1 = global_bas_n;
+			}
+			else if (global_bas_dif == true)
+			{
+				global_bas_dif = false;
+				
+				if (global_bas_n)
 				{
-					// first for change event set_flag
-					// if has event again before debounce re-set_flag
-					input_dif[index] = true;
-					input_n_1[index] = input_n[index];
+					for (index = 0; index < WINDOW_NO; index++)
+					{
+						out = (output_t*)(output  + index);
+						out->dir = DIR_DOWN;
+						out->run = RUN_ACTIVE;
+						run_active_count[index] = 0;
+					}
 				}
 				else
 				{
-					// if still current change, event has pass debounce
-					if (input_dif[index] == true)
+					for (index = 0; index < WINDOW_NO; index++)
 					{
-						input_dif[index] = false;
-						
-						// check config switch
-						if (in->config == CONF_NONE) // all off
+						out = (output_t*)(output  + index);
+						out->dir = DIR_UP;
+						out->run = RUN_ACTIVE;
+						run_active_count[index] = 0;
+					}
+				}
+			}
+			else
+			{
+				
+				hc165_read (input_n ,WINDOW_NO);
+				
+				for (index = 0; index < WINDOW_NO; index++)
+				{
+					in  = (input_t* )(input_n + index);
+					out = (output_t*)(output  + index);
+	/*				
+					if (in->config == CONF_2CH) // all on
+					{
+						current_limit = CURRENT_2CH;
+					}
+					else // CONF_LCH or CONF_RCH
+					{
+						current_limit = CURRENT_1CH;
+					}
+					
+					// stop when current reach to limit
+					if (adc[index] >= current_limit)
+					{
+						out->dir = DIR_RESET;
+						out->run = RUN_INACTIVE;
+					}
+	*/				
+					// debounce algorithm
+					if (input_n_1[index] != input_n[index])
+					{
+						// first for change event set_flag
+						// if has event again before debounce re-set_flag
+						input_dif[index] = true;
+						input_n_1[index] = input_n[index];
+					}
+					else
+					{
+						// if still current change, event has pass debounce
+						if (input_dif[index] == true)
 						{
-							// disable this window channel
-							out->byte = 0;
-						}
-						else
-						{
-							// check control
-							if (in->up_down == SW_UP)
+							input_dif[index] = false;
+							
+							// check config switch
+							if (in->config == CONF_NONE) // all off
 							{
-								out->dir = DIR_UP;
-								out->run = RUN_ACTIVE;
+								// disable this window channel
+								out->byte = 0;
 							}
-							else if (in->up_down == SW_DOWN)
+							else
 							{
-								out->dir = DIR_DOWN;
-								out->run = RUN_ACTIVE;
+								// check control
+								if (in->up_down == SW_UP)
+								{
+									out->dir = DIR_UP;
+									out->run = RUN_ACTIVE;
+									run_active_count[index] = 0;
+								}
+								else if (in->up_down == SW_DOWN)
+								{
+									out->dir = DIR_DOWN;
+									out->run = RUN_ACTIVE;
+									run_active_count[index] = 0;
+								}
+								else if (in->up_down == SW_STOP)
+								{
+									out->dir = DIR_RESET;
+									out->run = RUN_INACTIVE;
+								}
+								else {}
 							}
-							else if (in->up_down == SW_STOP)
-							{
-								out->dir = DIR_RESET;
-								out->run = RUN_INACTIVE;
-							}
-							else {}
 						}
 					}
 				}
@@ -283,3 +343,4 @@ int main(void)
 
 	return 0;
 }
+
