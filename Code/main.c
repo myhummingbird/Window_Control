@@ -107,11 +107,10 @@ typedef union {
 #define DIR_UP		0
 #define DIR_DOWN	1
 
-#define ALARM_INACTIVE	0
-#define ALARM_ACTIVE	1
+#define CURRENT_1CH		0x15
+#define CURRENT_2CH		0x20
 
-#define CURRENT_1CH		0x60	// 96
-#define CURRENT_2CH		0xC0	// 192
+#define RUN_ACTIVE_CHECK_CURRENT	40	// 2 seconds
 
 uint32_t ms_tick = 0;
 uint32_t  s_tick = 0;
@@ -147,7 +146,7 @@ void timer_init(void)
 uint8_t ADC_NO = 0;
 uint8_t adc      [WINDOW_NO] = {0x00, 0x00, 0x00, 0x00, 0x00};
 
-#define CMA_N	3
+#define CMA_N	9
 ISR(ADC_vect)
 {
 	adc[ ADC_NO ] = (uint8_t)(((float)(adc[ ADC_NO ] * CMA_N) + ADCH) / (CMA_N + 1));			// Output ADCH
@@ -158,7 +157,7 @@ ISR(ADC_vect)
 
 #define clrscr() printf ("%c[2J", 27)
 
-#define RUN_ACTIVE_TIME_LIMIT 	1800
+#define RUN_ACTIVE_TIME_LIMIT 	1800	// 90 seconds
 
 int main(void)
 {
@@ -172,10 +171,12 @@ int main(void)
 	
 	uint8_t output   [WINDOW_NO] = {0x00, 0x00, 0x00, 0x00, 0x00};
 	uint16_t run_active_count [WINDOW_NO] = {0, 0, 0, 0, 0};
+	uint8_t current_limit [WINDOW_NO] = {CURRENT_1CH, CURRENT_1CH, CURRENT_1CH, CURRENT_1CH, CURRENT_1CH};
+	uint8_t alarm_flag = 0x00;	
+	
 	
 	input_t  *in;
 	output_t *out;
-	uint8_t current_limit;
 	
 	uint8_t index;
 	uint8_t count_display = 0;
@@ -204,22 +205,60 @@ int main(void)
 		{
 			tick_flag = false;
 			
+			hc165_read (input_n ,WINDOW_NO);
+			
+			// check current and runtime
 			for (index = 0; index < WINDOW_NO; index++)
 			{
+				in  = (input_t* )(input_n + index);
 				out = (output_t*)(output  + index);
+				
+				if (in->config == CONF_2CH) // all on
+				{
+					current_limit[index] = CURRENT_2CH;
+				}
+				else if (in->config != CONF_NONE) // CONF_LCH or CONF_RCH
+				{
+					current_limit[index] = CURRENT_1CH;
+				}
+				else
+				{
+					current_limit[index] = 0;
+					alarm_flag &= ~(1 << index);
+				}
 				
 				if (out->run == RUN_ACTIVE)
 				{
 					run_active_count[index]++;
 					
-					if (run_active_count[index] >= RUN_ACTIVE_TIME_LIMIT)
+					if (run_active_count[index] == RUN_ACTIVE_CHECK_CURRENT)
+					{
+						if (adc[index] > current_limit[index])
+						{
+							alarm_flag &= ~(1 << index);
+						}
+						else
+						{
+							alarm_flag |=  (1 << index);
+						}
+					}
+					else if (run_active_count[index] >= RUN_ACTIVE_TIME_LIMIT)
 					{
 						out->run = RUN_INACTIVE;
 						out->dir = DIR_RESET;
+						run_active_count[index] = 0;
 					}
 				}
 			}
 			
+			// set global alarm
+			if (alarm_flag) {
+				GLOBAL_ALARM_ACTIVE();
+			} else {
+				GLOBAL_ALARM_INACTIVE();
+			}
+			
+			// input control section such as BAS, switch
 			global_bas_n = GLOBAL_BAS_READ();
 			if (global_bas_n_1 != global_bas_n)
 			{
@@ -234,49 +273,38 @@ int main(void)
 				{
 					for (index = 0; index < WINDOW_NO; index++)
 					{
+						in  = (input_t* )(input_n + index);
 						out = (output_t*)(output  + index);
-						out->dir = DIR_DOWN;
-						out->run = RUN_ACTIVE;
-						run_active_count[index] = 0;
+						if (in->config != CONF_NONE)
+						{
+							out->dir = DIR_DOWN;
+							out->run = RUN_ACTIVE;
+							run_active_count[index] = 0;
+						}
 					}
 				}
 				else
 				{
 					for (index = 0; index < WINDOW_NO; index++)
 					{
+						in  = (input_t* )(input_n + index);
 						out = (output_t*)(output  + index);
-						out->dir = DIR_UP;
-						out->run = RUN_ACTIVE;
-						run_active_count[index] = 0;
+						if (in->config != CONF_NONE)
+						{
+							out->dir = DIR_UP;
+							out->run = RUN_ACTIVE;
+							run_active_count[index] = 0;
+						}
 					}
 				}
 			}
 			else
 			{
-				
-				hc165_read (input_n ,WINDOW_NO);
-				
 				for (index = 0; index < WINDOW_NO; index++)
 				{
 					in  = (input_t* )(input_n + index);
 					out = (output_t*)(output  + index);
-	/*				
-					if (in->config == CONF_2CH) // all on
-					{
-						current_limit = CURRENT_2CH;
-					}
-					else // CONF_LCH or CONF_RCH
-					{
-						current_limit = CURRENT_1CH;
-					}
 					
-					// stop when current reach to limit
-					if (adc[index] >= current_limit)
-					{
-						out->dir = DIR_RESET;
-						out->run = RUN_INACTIVE;
-					}
-	*/				
 					// debounce algorithm
 					if (input_n_1[index] != input_n[index])
 					{
@@ -317,6 +345,7 @@ int main(void)
 								{
 									out->dir = DIR_RESET;
 									out->run = RUN_INACTIVE;
+									run_active_count[index] = 0;
 								}
 								else {}
 							}
@@ -325,18 +354,20 @@ int main(void)
 				}
 			}
 			
-			hc595_write (output, WINDOW_NO);
+			// send control output
+			hc595_write (output, WINDOW_NO);	
 			
+			// serial monitor
 			count_display++;
 			if (count_display == 3)
 			{
 				count_display = 0;
 				
 				clrscr();
-				printf ("\r\n%4lu\r\n", ms_tick);
-				printf ("0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", adc[0]    , adc[1]    , adc[2]    , adc[3]    , adc[4]    );
-				printf ("0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", input_n[0], input_n[1], input_n[2], input_n[3], input_n[4]);
-				printf ("0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", output[0] , output[1] , output[2] , output[3] , output[4] );
+				printf ("\r\n%4lu\t 0x%02x\r\n", ms_tick, alarm_flag);
+				printf ("adc\t0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", adc[0]    , adc[1]    , adc[2]    , adc[3]    , adc[4]    );
+				printf ("input\t0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", input_n[0], input_n[1], input_n[2], input_n[3], input_n[4]);
+				printf ("output\t0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", output[0] , output[1] , output[2] , output[3] , output[4] );
 			}
 		}
 	}
