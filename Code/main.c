@@ -107,10 +107,17 @@ typedef union {
 #define DIR_UP		0
 #define DIR_DOWN	1
 
-#define CURRENT_1CH		0x15
-#define CURRENT_2CH		0x20
+#define CURRENT_1CH		0x05
+#define CURRENT_2CH		0x10
 
-#define RUN_ACTIVE_CHECK_CURRENT	40	// 2 seconds
+#define RUN_ACTIVE_CHECK_CURRENT1	10	// 0.5 seconds
+#define RUN_ACTIVE_CHECK_CURRENT2	15	// 0.75 seconds
+#define RUN_ACTIVE_CHECK_CURRENT3	20	// 1 seconds
+#define RUN_ACTIVE_CHECK_CURRENT4	25	// 1.25 seconds
+#define RUN_ACTIVE_CHECK_CURRENT5	30	// 1.5 seconds
+#define RUN_ACTIVE_CHECK_CURRENT6	35	// 1.75 seconds
+
+#define CURRENT_TIMES	6
 
 uint32_t ms_tick = 0;
 uint32_t  s_tick = 0;
@@ -172,8 +179,8 @@ int main(void)
 	uint8_t output   [WINDOW_NO] = {0x00, 0x00, 0x00, 0x00, 0x00};
 	uint16_t run_active_count [WINDOW_NO] = {0, 0, 0, 0, 0};
 	uint8_t current_limit [WINDOW_NO] = {CURRENT_1CH, CURRENT_1CH, CURRENT_1CH, CURRENT_1CH, CURRENT_1CH};
-	uint8_t alarm_flag = 0x00;	
-	
+	uint8_t alarm_flag = 0x00;
+	uint16_t current_check [WINDOW_NO] = {0, 0, 0, 0, 0};
 	
 	input_t  *in;
 	output_t *out;
@@ -231,9 +238,18 @@ int main(void)
 				{
 					run_active_count[index]++;
 					
-					if (run_active_count[index] == RUN_ACTIVE_CHECK_CURRENT)
+					if (run_active_count[index] == 1)
+						current_check[index] = 0;
+					else if (	(run_active_count[index] == RUN_ACTIVE_CHECK_CURRENT1) || \
+								(run_active_count[index] == RUN_ACTIVE_CHECK_CURRENT2) || \
+								(run_active_count[index] == RUN_ACTIVE_CHECK_CURRENT3) || \
+								(run_active_count[index] == RUN_ACTIVE_CHECK_CURRENT4) || \
+								(run_active_count[index] == RUN_ACTIVE_CHECK_CURRENT5)	)
+						current_check[index] += adc[index];
+					else if (run_active_count[index] == RUN_ACTIVE_CHECK_CURRENT6)
 					{
-						if (adc[index] > current_limit[index])
+						current_check[index] += adc[index];
+						if (current_check[index] > (current_limit[index] * CURRENT_TIMES) )
 						{
 							alarm_flag &= ~(1 << index);
 						}
@@ -366,6 +382,7 @@ int main(void)
 				clrscr();
 				printf ("\r\n%4lu\t 0x%02x\r\n", ms_tick, alarm_flag);
 				printf ("adc\t0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", adc[0]    , adc[1]    , adc[2]    , adc[3]    , adc[4]    );
+				printf ("a_chk\t0x%04x 0x%04x 0x%04x 0x%04x 0x%04x\r\n", current_check[0]    , current_check[1]    , current_check[2]    , current_check[3]    , current_check[4]    );
 				printf ("input\t0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", input_n[0], input_n[1], input_n[2], input_n[3], input_n[4]);
 				printf ("output\t0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\r\n", output[0] , output[1] , output[2] , output[3] , output[4] );
 			}
