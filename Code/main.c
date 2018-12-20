@@ -249,13 +249,16 @@ int main(void)
 					else if (run_active_count[index] == RUN_ACTIVE_CHECK_CURRENT6)
 					{
 						current_check[index] += adc[index];
-						if (current_check[index] > (current_limit[index] * CURRENT_TIMES) )
+						if (out->dir == DIR_UP)
 						{
-							alarm_flag &= ~(1 << index);
-						}
-						else
-						{
-							alarm_flag |=  (1 << index);
+							if (current_check[index] > (current_limit[index] * CURRENT_TIMES) )
+							{
+								alarm_flag &= ~(1 << index);
+							}
+							else
+							{
+								alarm_flag |=  (1 << index);
+							}
 						}
 					}
 					else if (run_active_count[index] >= RUN_ACTIVE_TIME_LIMIT)
